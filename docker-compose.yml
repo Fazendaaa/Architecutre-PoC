@@ -1,0 +1,95 @@
+version: '3'
+
+services:
+  mongo:
+    image: mongo
+    container_name: mongo
+    restart: always
+    ports:
+      - "8081:80"
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - app-network
+
+  auth:
+    image: fazenda/loginpage-server
+    container_name: auth
+    restart: always
+    ports:
+      - "8081:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=( Host(`localhost`) && PathPrefix(`/auth`) )"
+      - "traefik.http.routers.auth.entrypoints=web"
+    depends_on:
+      - mongo
+    networks:
+      - app-network
+
+  login:
+    image: fazenda/poc-login
+    container_name: login
+    restart: always
+    ports:
+      - "8082:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.login.loadbalancer.server.port=8080"
+      - "traefik.http.routers.login.rule=( Host(`localhost`) && PathPrefix(`/login`) )"
+      - "traefik.http.routers.login.entrypoints=web"
+    depends_on:
+      - auth
+    networks:
+      - app-network
+
+  dashboard:
+    image: fazenda/poc-dash
+    container_name: dashboard
+    restart: always
+    ports:
+      - "8080:8080"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=( Host(`localhost`) && PathPrefix(`/dashboard`) )"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+    depends_on:
+      - login
+    networks:
+      - app-network
+
+  traefik:
+    image: traefik:v2.2
+    container_name: traefik
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - rdc
+    networks:
+      - app-network
+
+  watchtower:
+    container_name: watchtower
+    restart: always
+    image: v2tec/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - traefik
+    command: --schedule "0 0 4 * * *" --cleanup
+    networks:
+      - app-network
+    
+networks:
+  app-network:
+    driver: bridge
